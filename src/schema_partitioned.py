@@ -37,3 +37,4 @@ def get_env() -> dict:
         PARTITION_GRAIN=os.environ.get("PARTITION_GRAIN").lower(),
         DUMMY_INDEXES=int(os.environ.get("DUMMY_INDEXES")),
     )
+
