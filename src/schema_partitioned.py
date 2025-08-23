@@ -66,5 +66,7 @@ def parse_dates(start: str, end: str, grain: str) -> Iterable[Tuple[datetime, da
 
 def run_sql(engine: Engine, sql: str, **params) -> None:
     """
-    
+    Executes single line SQL statements
     """
+    with engine.begin() as con:
+        con.execute(text(sql), params)
