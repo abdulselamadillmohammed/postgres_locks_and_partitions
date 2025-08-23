@@ -45,3 +45,26 @@ def mk_engine(url: str) -> Engine:
     #pool_pre_ping - avoids “connection already closed” erros
     # future = formatting in sqlalchemy 2
     return create_engine(url, pool_pre_ping=True, future=True)
+
+# partition range creator
+# grain: range as in week or day... (cause date time partition)
+def parse_dates(start: str, end: str, grain: str) -> Iterable[Tuple[datetime, datetime, str]]:
+    """
+    Yield (for memory optimization) [start, end, suffix] windows for partions 
+    for a given range/grain. 
+    suffix is used for child table names
+    """
+    dt_start = datetime.fromisoformat(start)
+    dt_end = datetime.fromisoformat(end)
+    step = timedelta(days=1) if grain == "day" else timedelta(weeks=1)
+    curr = dt_start
+    while curr < dt_end:
+        next = min(curr + step, dt_end)
+        suffix = curr.strftime("%Y_%m_%d") if grain == "day" else f"wk_{curr.strftime("%Y_%m_%d")}"
+        yield curr, next, suffix
+        curr = next
+
+def run_sql(engine: Engine, sql: str, **params) -> None:
+    """
+    
+    """
