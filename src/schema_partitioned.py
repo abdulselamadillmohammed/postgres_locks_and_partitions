@@ -99,3 +99,17 @@ def create_child_partition(engine: Engine, schema: str, pstart:datetime, pend: d
         PARTITION OF {schema}.orders
         FOR VALUES FROM (:pstart) TO (:pend);
     """, pstart, pend)
+
+def create_indexes_on_child(engine: Engine, schema: str, suffix:str, dummy_indexes: int) -> None:
+    """
+    Create a realistic set of indexes on a child partition.
+    Also create N dummy partial indexes (to inflate lock counts) if requested.
+    """
+    idx_sql = f"""
+    CREATE INDEX IF NOT EXISTS idx_orders_{suffix}_order_time ON {schema}.orders_{suffix} (order_time);
+    CREATE INDEX IF NOT EXISTS idx_orders_{suffix}_customer   ON {schema}.orders_{suffix} (customer_id);
+    -- Partial index
+    CREATE INDEX IF NOT EXISTS idx_order_{suffix}_status_new ON {schema}.orders_{suffix} (order_time)
+        WHERE status = 'new';
+    """
+    run_sql(engine, idx_sql)
