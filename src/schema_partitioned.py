@@ -23,5 +23,17 @@ def env_bool(name: str, default: bool) -> bool:
     print(val)
     return val in ("1", "true", "yes", "y")    
 
+#print(env_bool("KILL_BLOCKERS", False))
 
-print(env_bool("KILL_BLOCKERS", False))
+def get_env() -> dict:
+    """
+    Returns database related env variables are a dict.
+    """
+    return dict(
+        DATABASE_URL=os.environ.get("DATABASE_URL"),
+        SCHEMA=os.environ.get("SCHEMA"),
+        START_DATE=os.environ.get("START_DATE"),
+        END_DATE=os.environ.get("END_DATE"),
+        PARTITION_GRAIN=os.environ.get("PARTITION_GRAIN").lower(),
+        DUMMY_INDEXES=int(os.environ.get("DUMMY_INDEXES")),
+    )
