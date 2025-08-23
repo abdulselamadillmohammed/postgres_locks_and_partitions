@@ -70,3 +70,22 @@ def run_sql(engine: Engine, sql: str, **params) -> None:
     """
     with engine.begin() as con:
         con.execute(text(sql), params)
+
+def create_parent(engine: Engine, schema: str) -> None:
+    """
+    Creates a partitioned parent table.
+    """
+    run_sql(engine, f"""
+    SET lock_timeout = '5s';
+    CREATE SCEMA IF NOT EXISTS {schema};
+    DROP TABLE IF EXISTS {schema}.orders CASCADE;
+    CREATE TABLE {schema}.orders (
+        order_id   UUID PRIMARY KEY,
+        customer_id   INT NOT NULL,
+        store_id      INT NOT NULL,
+        status    TEXT NOT NULL,
+        amount    NUMERIC(12,2) NOT NULL,
+        orer_time  TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+        updated_at  TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT now()
+    ) PARTITION BY RANGE (order_time)
+    """)
