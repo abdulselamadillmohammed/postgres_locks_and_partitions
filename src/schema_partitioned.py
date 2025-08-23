@@ -89,3 +89,13 @@ def create_parent(engine: Engine, schema: str) -> None:
         updated_at  TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT now()
     ) PARTITION BY RANGE (order_time)
     """)
+
+def create_child_partition(engine: Engine, schema: str, pstart:datetime, pend: datetime, suffix: str) -> None:
+    """
+    Creates a child partition in the range [pstart, pend) } end is exclusive
+    """
+    run_sql(engine, f"""
+    CREATE TABLE IF NOT EXISTS {schema}.orders_{suffix}
+        PARTITION OF {schema}.orders
+        FOR VALUES FROM (:pstart) TO (:pend);
+    """, pstart, pend)
