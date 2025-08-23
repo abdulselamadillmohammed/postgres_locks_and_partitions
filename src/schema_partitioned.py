@@ -38,3 +38,10 @@ def get_env() -> dict:
         DUMMY_INDEXES=int(os.environ.get("DUMMY_INDEXES")),
     )
 
+def mk_engine(url: str) -> Engine:
+    """
+    Creates SQLAlchemy engine for postgres
+    """
+    #pool_pre_ping - avoids “connection already closed” erros
+    # future = formatting in sqlalchemy 2
+    return create_engine(url, pool_pre_ping=True, future=True)
