@@ -41,4 +41,14 @@ def rand_time(start: str, end: str) -> tuple[str, str]:
     hi = base + timedelta(hours=6) # narrow window (fits one day partition)
     return lo.isoformat(sep=' '), hi.isoformat(sep=' ')
 
+def do_unbounded_range(engine: Engine, schema: str, start: str, end: str):
+    """
+    This performs a range query which doesn't use an order_time filter.
+    - This will likely create many locks 
+    """
+
+    sql = text(f"SELECT count(*) FROM {schema}.orders WHERE amount > :min_amount")
+    with engine.begin() as con:
+        con.execute(sql, {"min_amount": 50})
+
 
