@@ -100,3 +100,15 @@ def do_update(engine: Engine, schema: str):
     """)
     with engine.begin() as con:
         con.execute(sql)
+
+def do_insert(engine: Engine, schema: str):
+    """
+    Insert a tiny new order in the current time (routes to the newest partition).
+    """
+    sql = text(f"""
+        INSERT INTO {schema}.orders(order_id, customer_id, store_id, status, amount, order_time, updated_at)
+        VALUES (gen_random_uuid(), floor(random()*100000)::int, floor(random()*500)::int, 'new', 42.00, now(), now())
+    """)
+    with engine.begin() as con:
+        con.execute(sql)
+
