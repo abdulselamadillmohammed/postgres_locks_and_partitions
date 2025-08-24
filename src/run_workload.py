@@ -112,3 +112,56 @@ def do_insert(engine: Engine, schema: str):
     with engine.begin() as con:
         con.execute(sql)
 
+def run_mode(engine: Engine, cfg: dict, mode: str, seconds: int = 20):
+    """Run a workload for some seconds using a thread pool."""
+    ops = {
+        "unbounded-range": do_unbounded_range,
+        "pruned-range": do_pruned_range,
+        "lookup": lambda eng, sch, *_: do_lookup(eng, sch),
+        "update": lambda eng, sch, *_: do_update(eng, sch),
+        "insert": lambda eng, sch, *_: do_insert(eng, sch),
+        "mixed": None,  # handled specially below
+    }
+
+    if mode != "mixed" and mode not in ops:
+        raise ValueError(f"Unknown mode: {mode}")
+
+    stop_at = time.time() + seconds
+    with ThreadPoolExecutor(max_workers=cfg["CONCURRENCY"]) as tp:
+        futures = []
+        while time.time() < stop_at:
+            if mode == "mixed":
+                r = random.random()
+                if r < cfg["READ_RATIO"]:
+                    fn = random.choice([do_unbounded_range, do_pruned_range, do_lookup])
+                elif r < cfg["READ_RATIO"] + cfg["UPDATE_RATIO"]:
+                    fn = do_update
+                else:
+                    fn = do_insert
+            else:
+                fn = ops[mode]
+            futures.append(tp.submit(fn, engine, cfg["SCHEMA"], cfg["START_DATE"], cfg["END_DATE"]))
+
+        # Drain the queue (ignore individual failures in a lab)
+        for fut in as_completed(futures):
+            try:
+                fut.result()
+            except Exception as e:
+                # In a lab we log and continue; in prod you'd propagate or handle more carefully.
+                print("op failed:", repr(e))
+
+def main():
+    load_dotenv()
+    cfg = get_env()
+    parser = argparse.ArgumentParser(description="Run concurrent workloads to study locks.")
+    parser.add_argument("--mode", required=True, choices=["unbounded-range","pruned-range","lookup","update","insert","mixed"], help="Workload shape to run.")
+    parser.add_argument("--seconds", type=int, default=20, help="How long to run the workload.")
+    args = parser.parse_args()
+
+    engine = mk_engine(cfg["DATABASE_URL"], cfg["POOL_SIZE"], cfg["MAX_OVERFLOW"])
+    print(f"Running mode={args.mode} for {args.seconds}s with concurrency={cfg['CONCURRENCY']} ...")
+    run_mode(engine, cfg, args.mode, args.seconds)
+    print("Done.")
+
+if __name__ == "__main__":
+    main()
