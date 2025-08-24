@@ -10,7 +10,9 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from dotenv import load_dotenv
 from tqdm import tqdm
- 
+
+from .schema_partitioned import mk_engine
+
 fake = Faker()
 
 def get_env():
@@ -23,3 +25,20 @@ def get_env():
         START_DATE=os.environ.get("START_DATE", "2025-01-01"),
         END_DATE=os.environ.get("END_DATE", "2025-02-01"),
     )
+
+def synth_row(day: datetime) -> Tuple:
+    """
+    Create one synthetic order row for a given day. 
+    Returns a tuple matching table columns.
+    """
+    order_id = uuid4()
+    customer_id = Faker().random_int(min=1, max=100_000)
+    store_id = Faker().random_int(min=1, max=500)
+    status = Faker().random_element(elements=("new","in_progress", "done", "failed"))
+    amount = round(Faker().pyfloat(left_digits=4, right=2, positive=True, min_value=5, max_value=500), 2)
+    # Random time within the day
+    order_time = day + timedelta(seconds=Faker().random_int(min=0, max=86399))
+    updated_at = order_time
+    return (str(order_id), customer_id, store_id, status, amount, order_time, updated_at)
+
+
