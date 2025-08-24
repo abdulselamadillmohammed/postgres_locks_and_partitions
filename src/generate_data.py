@@ -11,7 +11,7 @@ from sqlalchemy.engine import Engine
 from dotenv import load_dotenv
 from tqdm import tqdm
 
-from .schema_partitioned import mk_engine
+# from .schema_partitioned import mk_engine
 
 fake = Faker()
 
@@ -26,6 +26,10 @@ def get_env():
         END_DATE=os.environ.get("END_DATE", "2025-02-01"),
     )
 
+def mk_engine(url: str) -> Engine:
+    return create_engine(url, pool_pre_ping=True, future=True)
+
+
 def daterange(start: datetime, end: datetime) -> List[datetime]:
     """
     Return list of days between start (inclusive) and end (exclusive).
@@ -37,20 +41,18 @@ def daterange(start: datetime, end: datetime) -> List[datetime]:
         curr += timedelta(days=1)
     return days
 
+
 def synth_row(day: datetime) -> Tuple:
-    """
-    Create one synthetic order row for a given day. 
-    Returns a tuple matching table columns.
-    """
     order_id = uuid4()
-    customer_id = Faker().random_int(min=1, max=100_000)
-    store_id = Faker().random_int(min=1, max=500)
-    status = Faker().random_element(elements=("new","in_progress", "done", "failed"))
-    amount = round(Faker().pyfloat(left_digits=4, right=2, positive=True, min_value=5, max_value=500), 2)
-    # Random time within the day
-    order_time = day + timedelta(seconds=Faker().random_int(min=0, max=86399))
+    customer_id = fake.random_int(min=1, max=100_000)
+    store_id   = fake.random_int(min=1, max=500)
+    status     = fake.random_element(elements=("new", "in_progress", "done", "failed"))
+    amount     = round(fake.pyfloat(left_digits=4, right_digits=2, positive=True, min_value=5, max_value=500), 2)
+    order_time = day + timedelta(seconds=fake.random_int(min=0, max=86399))
     updated_at = order_time
     return (str(order_id), customer_id, store_id, status, amount, order_time, updated_at)
+
+
 
 def batch_insert(engine: Engine, schema: str, rows: List[Tuple]):
     """
@@ -90,5 +92,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-    

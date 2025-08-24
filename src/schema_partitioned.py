@@ -1,7 +1,11 @@
-import os
-#import sys
-import argparse
+# NOTE: This file is intentionally *verbose*. It's meant for learning.
+# Every function has a docstring that explains *why* we're doing something,
+# and inline comments explain *what each line does*.
+# You can trim comments later when you're comfortable with the flow.
 
+import os
+import sys
+import argparse
 from datetime import datetime, timedelta
 from typing import Iterable, Tuple
 
@@ -9,71 +13,53 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from dotenv import load_dotenv
 
-# to run: python3 src/schema_partitioned.py --init --create-partitions
-
-
-load_dotenv() 
-
 def env_bool(name: str, default: bool) -> bool:
-    """
-    Helper function in order to read booleans from the environment 
-    like 'True/False.'
-    """
+    """Helper to read booleans from environment like 'true/false/1/0'."""
     val = os.getenv(name, str(default)).strip().lower()
-    print(val)
-    return val in ("1", "true", "yes", "y")    
-
-#print(env_bool("KILL_BLOCKERS", False))
+    return val in ("1", "true", "yes", "y")
 
 def get_env() -> dict:
     """
-    Returns database related env variables are a dict.
+    Load .env (if present) and return relevant settings as a dict.
     """
+    load_dotenv()
     return dict(
-        DATABASE_URL=os.environ.get("DATABASE_URL"),
-        SCHEMA=os.environ.get("SCHEMA"),
-        START_DATE=os.environ.get("START_DATE"),
-        END_DATE=os.environ.get("END_DATE"),
-        PARTITION_GRAIN=os.environ.get("PARTITION_GRAIN").lower(),
-        DUMMY_INDEXES=int(os.environ.get("DUMMY_INDEXES")),
+        DATABASE_URL=os.environ.get("DATABASE_URL", "postgresql+psycopg2://postgres:postgres@localhost:5432/pg_partition_lab"),
+        SCHEMA=os.environ.get("SCHEMA", "public"),
+        START_DATE=os.environ.get("START_DATE", "2025-01-01"),
+        END_DATE=os.environ.get("END_DATE", "2025-02-01"),
+        PARTITION_GRAIN=os.environ.get("PARTITION_GRAIN", "day").lower(),
+        DUMMY_INDEXES=int(os.environ.get("DUMMY_INDEXES", "0")),
     )
 
 def mk_engine(url: str) -> Engine:
-    """
-    Creates SQLAlchemy engine for postgres
-    """
-    #pool_pre_ping - avoids “connection already closed” erros
-    # future = formatting in sqlalchemy 2
+    """Create a SQLAlchemy Engine for Postgres; pool defaults are fine here."""
+    # The engine manages DBAPI connections for us.
     return create_engine(url, pool_pre_ping=True, future=True)
 
-# partition range creator
-# grain: range as in week or day... (cause date time partition)
 def parse_dates(start: str, end: str, grain: str) -> Iterable[Tuple[datetime, datetime, str]]:
-    """
-    Yield (for memory optimization) [start, end, suffix] windows for partions 
-    for a given range/grain. 
-    suffix is used for child table names
+    """Yield (start, end, suffix) windows for partitions of given grain (day/week).
+    'suffix' is used in child table names, like orders_2025_01_07.
     """
     dt_start = datetime.fromisoformat(start)
     dt_end = datetime.fromisoformat(end)
     step = timedelta(days=1) if grain == "day" else timedelta(weeks=1)
-    curr = dt_start
-    while curr < dt_end:
-        next = min(curr + step, dt_end)
-        suffix = curr.strftime("%Y_%m_%d") if grain == "day" else f"wk_{curr.strftime('%Y_%m_%d')}"
-        yield curr, next, suffix
-        curr = next
+    cur = dt_start
+    while cur < dt_end:
+        nxt = min(cur + step, dt_end)
+        suffix = cur.strftime("%Y_%m_%d") if grain == "day" else f"wk_{cur.strftime('%Y_%m_%d')}"
+        yield cur, nxt, suffix
+        cur = nxt
 
 def run_sql(engine: Engine, sql: str, **params) -> None:
-    """
-    Executes single line SQL statements
-    """
-    with engine.begin() as con:
+    """Execute a single SQL statement with optional parameters."""
+    with engine.begin() as con:  # 'begin' opens a tx and commits on success/close
         con.execute(text(sql), params)
 
 def create_parent(engine: Engine, schema: str) -> None:
     """
-    Creates a partitioned parent table.
+    Create the PARTITIONED parent table. Drops any existing 
+    parent (lab safety).
     """
     run_sql(engine, f"""
     SET lock_timeout = '5s';
@@ -81,53 +67,52 @@ def create_parent(engine: Engine, schema: str) -> None:
     DROP TABLE IF EXISTS {schema}.orders CASCADE;
     CREATE TABLE {schema}.orders (
         order_id   UUID PRIMARY KEY,
-        customer_id   INT NOT NULL,
-        store_id      INT NOT NULL,
-        status    TEXT NOT NULL,
-        amount    NUMERIC(12,2) NOT NULL,
+        customer_id INT NOT NULL,
+        store_id    INT NOT NULL,
+        status      TEXT NOT NULL,
+        amount      NUMERIC(12,2) NOT NULL,
         order_time  TIMESTAMP WITHOUT TIME ZONE NOT NULL,
         updated_at  TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT now()
     ) PARTITION BY RANGE (order_time);
     """)
 
-def create_child_partition(engine: Engine, schema: str, pstart:datetime, pend: datetime, suffix: str) -> None:
-    """
-    Creates a child partition in the range [pstart, pend) } end is exclusive
-    """
+def create_child_partition(engine: Engine, 
+                           schema: str, pstart: datetime, 
+                           pend: datetime, suffix: str) -> None:
+    """Create one child partition in [pstart, pend)."""
     run_sql(engine, f"""
-        CREATE TABLE IF NOT EXISTS {schema}.orders_{suffix}
-            PARTITION OF {schema}.orders
-            FOR VALUES FROM (:pstart) TO (:pend);
-        """, pstart=pstart, pend=pend)
+    CREATE TABLE IF NOT EXISTS {schema}.orders_{suffix}
+        PARTITION OF {schema}.orders
+        FOR VALUES FROM (:pstart) TO (:pend);
+    """, pstart=pstart, pend=pend)
 
-
-def create_indexes_on_child(engine: Engine, schema: str, suffix:str, dummy_indexes: int) -> None:
-    """
-    Create a realistic set of indexes on a child partition.
+def create_indexes_on_child(engine: Engine, schema: str, suffix: str, dummy_indexes: int) -> None:
+    """Create a realistic set of indexes on a child partition.
     Also create N dummy partial indexes (to inflate lock counts) if requested.
     """
+    # Index per-child ensures fewer index bloat per child and better pruning.
     idx_sql = f"""
     CREATE INDEX IF NOT EXISTS idx_orders_{suffix}_order_time ON {schema}.orders_{suffix} (order_time);
     CREATE INDEX IF NOT EXISTS idx_orders_{suffix}_customer   ON {schema}.orders_{suffix} (customer_id);
-    -- Partial index
+    CREATE INDEX IF NOT EXISTS idx_orders_{suffix}_store      ON {schema}.orders_{suffix} (store_id);
+    -- Partial index often used for queues (only 'new' work)
     CREATE INDEX IF NOT EXISTS idx_orders_{suffix}_status_new ON {schema}.orders_{suffix} (order_time)
         WHERE status = 'new';
     """
     run_sql(engine, idx_sql)
 
-    # Create artificial locks to force on lock manager waits which are visible 
+    # Optional dummy partial indexes: these are *intentionally redundant* for the lab.
     for i in range(dummy_indexes):
         run_sql(engine, f"""
         CREATE INDEX IF NOT EXISTS idx_orders_{suffix}_dummy_{i} ON {schema}.orders_{suffix} ((EXTRACT(EPOCH FROM order_time)))
         WHERE (EXTRACT(EPOCH FROM order_time)::BIGINT % :modulus) = :remainder;
         """, modulus=max(1, dummy_indexes), remainder=i % max(1, dummy_indexes))
 
-def create_partitions(engine: Engine, schema: str,
+def create_partitions(engine: Engine, schema: str, 
                       start: str, end: str, grain: str, 
                       dummy_indexes: int) -> None:
-    """
-    Creates multiple partitions with indexes in order to inflate lock count. 
-    """
+    """Create many partitions with indexes. This is where lock count can 
+    explode later."""
     for pstart, pend, suffix in parse_dates(start, end, grain):
         create_child_partition(engine, schema, pstart, pend, suffix)
         create_indexes_on_child(engine, schema, suffix, dummy_indexes)
