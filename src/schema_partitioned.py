@@ -60,7 +60,7 @@ def parse_dates(start: str, end: str, grain: str) -> Iterable[Tuple[datetime, da
     curr = dt_start
     while curr < dt_end:
         next = min(curr + step, dt_end)
-        suffix = curr.strftime("%Y_%m_%d") if grain == "day" else f"wk_{curr.strftime("%Y_%m_%d")}"
+        suffix = curr.strftime("%Y_%m_%d") if grain == "day" else f"wk_{curr.strftime('%Y_%m_%d')}"
         yield curr, next, suffix
         curr = next
 
@@ -77,7 +77,7 @@ def create_parent(engine: Engine, schema: str) -> None:
     """
     run_sql(engine, f"""
     SET lock_timeout = '5s';
-    CREATE SCEMA IF NOT EXISTS {schema};
+    CREATE SCHEMA IF NOT EXISTS {schema};
     DROP TABLE IF EXISTS {schema}.orders CASCADE;
     CREATE TABLE {schema}.orders (
         order_id   UUID PRIMARY KEY,
@@ -85,9 +85,9 @@ def create_parent(engine: Engine, schema: str) -> None:
         store_id      INT NOT NULL,
         status    TEXT NOT NULL,
         amount    NUMERIC(12,2) NOT NULL,
-        orer_time  TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+        order_time  TIMESTAMP WITHOUT TIME ZONE NOT NULL,
         updated_at  TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT now()
-    ) PARTITION BY RANGE (order_time)
+    ) PARTITION BY RANGE (order_time);
     """)
 
 def create_child_partition(engine: Engine, schema: str, pstart:datetime, pend: datetime, suffix: str) -> None:
@@ -95,10 +95,11 @@ def create_child_partition(engine: Engine, schema: str, pstart:datetime, pend: d
     Creates a child partition in the range [pstart, pend) } end is exclusive
     """
     run_sql(engine, f"""
-    CREATE TABLE IF NOT EXISTS {schema}.orders_{suffix}
-        PARTITION OF {schema}.orders
-        FOR VALUES FROM (:pstart) TO (:pend);
-    """, pstart, pend)
+        CREATE TABLE IF NOT EXISTS {schema}.orders_{suffix}
+            PARTITION OF {schema}.orders
+            FOR VALUES FROM (:pstart) TO (:pend);
+        """, pstart=pstart, pend=pend)
+
 
 def create_indexes_on_child(engine: Engine, schema: str, suffix:str, dummy_indexes: int) -> None:
     """
@@ -109,7 +110,7 @@ def create_indexes_on_child(engine: Engine, schema: str, suffix:str, dummy_index
     CREATE INDEX IF NOT EXISTS idx_orders_{suffix}_order_time ON {schema}.orders_{suffix} (order_time);
     CREATE INDEX IF NOT EXISTS idx_orders_{suffix}_customer   ON {schema}.orders_{suffix} (customer_id);
     -- Partial index
-    CREATE INDEX IF NOT EXISTS idx_order_{suffix}_status_new ON {schema}.orders_{suffix} (order_time)
+    CREATE INDEX IF NOT EXISTS idx_orders_{suffix}_status_new ON {schema}.orders_{suffix} (order_time)
         WHERE status = 'new';
     """
     run_sql(engine, idx_sql)
@@ -130,3 +131,26 @@ def create_partitions(engine: Engine, schema: str,
     for pstart, pend, suffix in parse_dates(start, end, grain):
         create_child_partition(engine, schema, pstart, pend, suffix)
         create_indexes_on_child(engine, schema, suffix, dummy_indexes)
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description="Create partitioned orders table and child partitions.")
+    parser.add_argument("--init", action="store_true", help="Drop & recreate parent table.")
+    parser.add_argument("--create-partitions", action="store_true", help="Create partitions and indexes.")
+    args = parser.parse_args(argv)
+
+    cfg = get_env()
+    engine = mk_engine(cfg["DATABASE_URL"])
+
+    if args.init:
+        print("Creating parent partitioned table ...")
+        create_parent(engine, cfg["SCHEMA"])
+
+    if args.create_partitions:
+        print(f"Creating partitions ({cfg['PARTITION_GRAIN']}) from {cfg['START_DATE']} to {cfg['END_DATE']} ...")
+        create_partitions(engine, cfg["SCHEMA"], cfg["START_DATE"], cfg["END_DATE"], cfg["PARTITION_GRAIN"], cfg["DUMMY_INDEXES"])
+        print("Done.")
+
+    return 0
+
+if __name__ == "__main__":
+    raise SystemExit(main())
