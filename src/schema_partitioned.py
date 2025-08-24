@@ -120,3 +120,13 @@ def create_indexes_on_child(engine: Engine, schema: str, suffix:str, dummy_index
         CREATE INDEX IF NOT EXISTS idx_orders_{suffix}_dummy_{i} ON {schema}.orders_{suffix} ((EXTRACT(EPOCH FROM order_time)))
         WHERE (EXTRACT(EPOCH FROM order_time)::BIGINT % :modulus) = :remainder;
         """, modulus=max(1, dummy_indexes), remainder=i % max(1, dummy_indexes))
+
+def create_partitions(engine: Engine, schema: str,
+                      start: str, end: str, grain: str, 
+                      dummy_indexes: int) -> None:
+    """
+    Creates multiple partitions with indexes in order to inflate lock count. 
+    """
+    for pstart, pend, suffix in parse_dates(start, end, grain):
+        create_child_partition(engine, schema, pstart, pend, suffix)
+        create_indexes_on_child(engine, schema, suffix, dummy_indexes)
