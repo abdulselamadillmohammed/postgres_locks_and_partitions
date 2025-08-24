@@ -81,3 +81,22 @@ def do_lookup(engine: Engine, schema: str):
         if row:
             oid = row[0]
             con.execute(text(f"SELECT * FROM {schema}.orders WHERE order_id = :oid"), {"oid": str(oid)})
+
+def do_update(engine: Engine, schema: str): 
+    """
+    Flip some 'new' work to 'in_progress' or 'done'. Use LIMIT via
+    ctid (customer id) to avoid full-table update
+    """
+    sql = text(f"""
+        UPDATE {schema}.orders o
+        SET status = CASE status WHEN 'new' THEN 'in_progress' ELSE 'done' END,
+            updated_at = now()
+        WHERE ctid = (
+            SELECT ctid FROM {schema}.orders
+            WHERE status IN ('new','in_progress')
+            ORDER BY order_time DESC
+            LIMIT 1
+        )
+    """)
+    with engine.begin() as con:
+        con.execute(sql)
