@@ -64,3 +64,20 @@ def do_pruned_range(engine: Engine, schema: str, start: str, end: str):
     """)
     with engine.begin() as con:
         con.execute(sql, {"min_amount": 50, "lo": lo, "hi": hi})
+
+def do_lookup(engine: Engine, schema: str):
+    """
+    Lookup the most recent order, then fetch its full row.
+    """
+    sql = text(f"""
+        SELECT order_id FROM {schema}.orders
+        WHERE order_time > now() - interval '365 days'
+        ORDER BY order_time DESC
+        LIMIT 1
+    """)
+    with engine.begin() as con:
+        row = con.execute(sql).first()
+        # If we found an order_id, fetch its full row
+        if row:
+            oid = row[0]
+            con.execute(text(f"SELECT * FROM {schema}.orders WHERE order_id = :oid"), {"oid": str(oid)})
