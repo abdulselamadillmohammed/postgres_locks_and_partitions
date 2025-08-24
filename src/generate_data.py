@@ -41,4 +41,15 @@ def synth_row(day: datetime) -> Tuple:
     updated_at = order_time
     return (str(order_id), customer_id, store_id, status, amount, order_time, updated_at)
 
+def batch_insert(engine: Engine, schema: str, rows: List[Tuple]):
+    """
+    Insert a batch using an executemany against the parent table (Postgres routes to child).
+    """
+    sql = text(f"""
+        INSERT INTO {schema}.orders(order_id, customer_id, store_id, status, amount, order_time, updated_at)
+        VALUES (:order_id, :customer_id, :store_id, :status, :amount, :order_time, :updated_at)
+    """)
+    payload = [dict(order_id=r[0], customer_id=r[1], store_id=r[2], status=r[3], amount=r[4], order_time=r[5], updated_at=r[6]) for r in rows]
+    with engine.begin() as con:
+        con.execute(sql, payload)
 
