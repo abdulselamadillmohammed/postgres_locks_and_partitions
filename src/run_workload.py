@@ -51,4 +51,16 @@ def do_unbounded_range(engine: Engine, schema: str, start: str, end: str):
     with engine.begin() as con:
         con.execute(sql, {"min_amount": 50})
 
-
+def do_pruned_range(engine: Engine, schema: str, start: str, end: str):
+    """
+    This targters a single partition via order_time
+    """
+    lo, hi = rand_time(start, end)
+    sql = text(f"""
+        SELECT count(*)
+        FROM {schema}.orders
+        WHERE amount > :min_amount
+          AND order_time >= :lo AND order_time < :hi
+    """)
+    with engine.begin() as con:
+        con.execute(sql, {"min_amount": 50, "lo": lo, "hi": hi})
