@@ -26,6 +26,17 @@ def get_env():
         END_DATE=os.environ.get("END_DATE", "2025-02-01"),
     )
 
+def daterange(start: datetime, end: datetime) -> List[datetime]:
+    """
+    Return list of days between start (inclusive) and end (exclusive).
+    """
+    days = []
+    curr = start
+    while curr < end:
+        days.append(curr)
+        curr += timedelta(days=1)
+    return days
+
 def synth_row(day: datetime) -> Tuple:
     """
     Create one synthetic order row for a given day. 
@@ -53,3 +64,31 @@ def batch_insert(engine: Engine, schema: str, rows: List[Tuple]):
     with engine.begin() as con:
         con.execute(sql, payload)
 
+def main():
+    cfg = get_env()
+    engine = mk_engine(cfg["DATABASE_URL"])
+
+    start = datetime.fromisoformat(cfg["START_DATE"])
+    end = datetime.fromisoformat(cfg["END_DATE"])
+    days = daterange(start, end)
+    rows_per_day = max(1, cfg["ROWS"] // max(1, len(days)))
+
+    print(f"Generating ~{cfg['ROWS']} rows across {len(days)} day(s) ...")
+    batch = []
+    for day in tqdm(days, desc="Days", unit="day"):
+        for _ in range(rows_per_day):
+            batch.append(synth_row(day))
+            if len(batch) >= cfg["BATCH_SIZE"]:
+                batch_insert(engine, cfg["SCHEMA"], batch)
+                batch.clear()
+        # flush any leftover per day to keep memory bounded
+        if batch:
+            batch_insert(engine, cfg["SCHEMA"], batch)
+            batch.clear()
+
+    print("Done generating.")
+
+if __name__ == "__main__":
+    main()
+
+    
