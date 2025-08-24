@@ -113,3 +113,10 @@ def create_indexes_on_child(engine: Engine, schema: str, suffix:str, dummy_index
         WHERE status = 'new';
     """
     run_sql(engine, idx_sql)
+
+    # Create artificial locks to force on lock manager waits which are visible 
+    for i in range(dummy_indexes):
+        run_sql(engine, f"""
+        CREATE INDEX IF NOT EXISTS idx_orders_{suffix}_dummy_{i} ON {schema}.orders_{suffix} ((EXTRACT(EPOCH FROM order_time)))
+        WHERE (EXTRACT(EPOCH FROM order_time)::BIGINT % :modulus) = :remainder;
+        """, modulus=max(1, dummy_indexes), remainder=i % max(1, dummy_indexes))
