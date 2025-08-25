@@ -23,11 +23,11 @@ Inspired by:
 
 ```
 
-locks_per_query ≈ partitions_touched × (1 table + N indexes) + 1 parent_table
+locks_per_query = partitions_touched × (1 table + N indexes) + 1 parent_table
 
 ```
 
-Example: 10 partitions × (1 + 22) ≈ **230** relation locks.
+Example: 10 partitions × (1 + 22) = **230** relation locks.
 
 ---
 
