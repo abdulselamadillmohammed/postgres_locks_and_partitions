@@ -23,7 +23,7 @@ Inspired by:
 
 ```
 
-locks\_per\_query  ≈  partitions\_touched × (1 table + N indexes)  +  1 parent\_table
+locks_per_query ≈ partitions_touched × (1 table + N indexes) + 1 parent_table
 
 ```
 
